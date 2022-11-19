@@ -65,54 +65,136 @@ NFA complete(const NFA& a) {
         State top = queue.front();
         queue.pop();
 
-        for (Symbol s : m_Alphabet) {
+        for (Symbol s : result.m_Alphabet) {
             std::pair<State, Symbol> transitionKey(top, s);
             auto transition = result.m_Transitions.find(transitionKey);
-            if (transition == result.m_Transitions.end()) { // If transition for this symbol doesnt exist, fill it
+
+            // If transition for this symbol doesnt exist, complete it to nullState
+            if (transition == result.m_Transitions.end()) {
                 result.m_Transitions[transitionKey] = { nullState };
-            } else { // If transition for this symbol does exist, add state of transition to queue and continue bfs
-                for (State destination : transition->second) {
-                    if (completed.count(destination) == 0) {
-                        completed.insert(destination);
-                        queue.push(destination);
-                    }
+                continue;
+            }
+
+            // If transition for this symbol does exist, add destination state to queue and continue bfs
+            for (State destination : transition->second) {
+                if (completed.count(destination) == 0) {
+                    completed.insert(destination);
+                    queue.push(destination);
                 }
             }
         }
-
     }
 
     return result;
 }
 
-DFA unify(const NFA& a, const NFA& b) {
+NFA parallel_run(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
     using DoubleState = std::pair<State, State>;
 
-    std::map<DoubleState, Symbol>, std::set<DoubleState>> newTransitions;
+    std::map<std::pair<DoubleState, Symbol>, std::set<DoubleState>> newTransitions;
     DoubleState newInitialState = { a.m_InitialState, b.m_InitialState };
 
     std::set<DoubleState> visited;
     std::queue<DoubleState> queue;
 
     queue.push(newInitialState);
-    completed.insert(newInitialState);
-    
-    while(queue.size() > 0) {
+    visited.insert(newInitialState);
+
+    while (queue.size() > 0) {
         DoubleState top = queue.front();
         queue.pop();
 
-        for (Symbol s: m_Alphabet) {
-            std::pair<State, Symbol> transitionKeyA = { top.first, s };
-            std::pair<State, Symbol> transitionKeyB = { top.second, s };
-            auto transitionA = a.m_Transitions.find(transitionKeyA);
-            auto transitionB = a.m_Transitions.find(transitionKeyA);
+        for (Symbol s : a.m_Alphabet) {
+            auto transitionA = a.m_Transitions.find(std::make_pair(top.first, s));
+            auto transitionB = a.m_Transitions.find(std::make_pair(top.second, s));
 
-            if ((transitionA == a.m_Transitions.end()) || (transitionB == b.m_Transitions.end()))
+            if ((transitionA == a.m_Transitions.end()) || (transitionB == b.m_Transitions.end())) {
+                continue;
+            }
+
+            for (State destinationA : transitionA->second) {
+                for (State destinationB : transitionB->second) {
+                    DoubleState destination = { destinationA, destinationB };
+                    newTransitions[std::make_pair(top, s)].insert(destination);
+                    if (visited.count(destination) == 0) {
+                        visited.insert(destination);
+                        queue.push(destination);
+                    }
+                }
+            }
         }
     }
 
+    NFA newNFA;
+    newNFA.m_Alphabet = a.m_Alphabet;
+
+    std::map<DoubleState, State> newStatesMapping;
+    State newStateValue = 0;
+    for (DoubleState const & doubleState : visited) {
+        newNFA.m_States.insert(newStateValue);
+        newStatesMapping[doubleState] = newStateValue;
+
+        bool finalInA = (a.m_FinalStates.count(doubleState.first) > 0);
+        bool finalInB = (b.m_FinalStates.count(doubleState.second) > 0);
+
+        if (finalStatesAreUnified) {
+            if (finalInA && finalInB) {
+                newNFA.m_FinalStates.insert(newStateValue);
+            }
+        } else {
+            if (finalInA || finalInB) {
+                newNFA.m_FinalStates.insert(newStateValue);
+            }
+        }
+
+        newStateValue++;
+    }
+
+    newNFA.m_InitialState = newStatesMapping[newInitialState];
+
+    for (auto it = newTransitions.begin(); it != newTransitions.end(); it++) {
+        for (DoubleState const & transitionDestination : it->second) {
+            DoubleState oldState = it->first.first;
+            Symbol symbol = it->first.second;
+            State newDestination = newStatesMapping[transitionDestination];
+            newNFA.m_Transitions[std::make_pair(newStatesMapping[oldState], symbol)].insert(newDestination);
+        }
+    }
+
+    return newNFA;
 }
-DFA intersect(const NFA& a, const NFA& b);
+
+void unifyAlphabets(NFA & a, NFA & b) {
+    std::set<Symbol> newAlphabet;
+    for (Symbol s : a.m_Alphabet) {
+        newAlphabet.insert(s);
+    }
+    for (Symbol s : b.m_Alphabet) {
+        newAlphabet.insert(s);
+    }
+
+    a.m_Alphabet = newAlphabet;
+    b.m_Alphabet = newAlphabet;
+}
+
+DFA unify(const NFA & a, const NFA & b) {
+    NFA copyA(a);
+    NFA copyB(b);
+    unifyAlphabets(copyA, copyB);
+
+    NFA completedA = complete(copyA);
+    NFA completedB = complete(copyB);
+
+    NFA unified = parallel_run(completedA, completedB, false);
+}
+
+DFA intersect(const NFA & a, const NFA & b) {
+    NFA copyA(a);
+    NFA copyB(b);
+    unifyAlphabets(copyA, copyB);
+
+    NFA intersected = parallel_run(copyA, copyB, true);
+}
 
 #ifndef __PROGTEST__
 
