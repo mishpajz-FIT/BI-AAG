@@ -53,7 +53,7 @@ NFA complete(const NFA& a) {
         result.m_Transitions[std::make_pair(nullState, s)] = { nullState };
     }
 
-    //BFS through automata and complete all transitions for all symbols of alphabet
+    // BFS through automata and complete all transitions for all symbols of alphabet
     std::set<State> completed;
     std::queue<State> queue;
 
@@ -88,12 +88,13 @@ NFA complete(const NFA& a) {
     return result;
 }
 
-NFA parallel_run(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
-    using DoubleState = std::pair<State, State>;
+NFA parallelRun(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
+    using DoubleState = std::pair<State, State>; // States are pairs of states, where lhs is state in a and rhs is state in b
 
-    std::map<std::pair<DoubleState, Symbol>, std::set<DoubleState>> newTransitions;
+    std::map<std::pair<DoubleState, Symbol>, std::set<DoubleState>> newTransitions; // New generated transitions
     DoubleState newInitialState = { a.m_InitialState, b.m_InitialState };
 
+    // BFS through automata and merge all states into doublestates
     std::set<DoubleState> visited;
     std::queue<DoubleState> queue;
 
@@ -105,6 +106,7 @@ NFA parallel_run(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
         queue.pop();
 
         for (Symbol s : a.m_Alphabet) {
+            // Find transtions for each state in doublestate in their automata
             auto transitionA = a.m_Transitions.find(std::make_pair(top.first, s));
             auto transitionB = a.m_Transitions.find(std::make_pair(top.second, s));
 
@@ -112,6 +114,9 @@ NFA parallel_run(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
                 continue;
             }
 
+            // Create combinations of all transition destinations for a automata with all transition desitnations
+            // for b automata (for each symbol) and add it as new transition for this doublestate,
+            // then continue BFS for each new transition destination
             for (State destinationA : transitionA->second) {
                 for (State destinationB : transitionB->second) {
                     DoubleState destination = { destinationA, destinationB };
@@ -125,43 +130,122 @@ NFA parallel_run(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
         }
     }
 
-    NFA newNFA;
-    newNFA.m_Alphabet = a.m_Alphabet;
+    NFA result;
+    result.m_Alphabet = a.m_Alphabet;
 
+    // Map each doublestate to new state for result automata
     std::map<DoubleState, State> newStatesMapping;
     State newStateValue = 0;
     for (DoubleState const & doubleState : visited) {
-        newNFA.m_States.insert(newStateValue);
+        result.m_States.insert(newStateValue);
         newStatesMapping[doubleState] = newStateValue;
 
+        // Decide if new state is final state based on function parameter
         bool finalInA = (a.m_FinalStates.count(doubleState.first) > 0);
         bool finalInB = (b.m_FinalStates.count(doubleState.second) > 0);
 
-        if (finalStatesAreUnified) {
+        if (finalStatesAreUnified) { // States in both a and b need to be final for new state to be final
             if (finalInA && finalInB) {
-                newNFA.m_FinalStates.insert(newStateValue);
+                result.m_FinalStates.insert(newStateValue);
             }
-        } else {
+        } else { // Only one state needs to be final for new state to be final
             if (finalInA || finalInB) {
-                newNFA.m_FinalStates.insert(newStateValue);
+                result.m_FinalStates.insert(newStateValue);
             }
         }
 
         newStateValue++;
     }
 
-    newNFA.m_InitialState = newStatesMapping[newInitialState];
+    result.m_InitialState = newStatesMapping[newInitialState]; // Assign initial state in result
 
+    // Create new transitions in result based on transitions with doublestates converted to new states  
     for (auto it = newTransitions.begin(); it != newTransitions.end(); it++) {
         for (DoubleState const & transitionDestination : it->second) {
             DoubleState oldState = it->first.first;
             Symbol symbol = it->first.second;
             State newDestination = newStatesMapping[transitionDestination];
-            newNFA.m_Transitions[std::make_pair(newStatesMapping[oldState], symbol)].insert(newDestination);
+            result.m_Transitions[std::make_pair(newStatesMapping[oldState], symbol)].insert(newDestination);
         }
     }
 
-    return newNFA;
+    return result;
+}
+
+DFA determinize(const NFA & nfa) {
+    using MultiState = std::set<State>; // States are sets of states
+
+    DFA result;
+    result.m_Alphabet = nfa.m_Alphabet;
+    result.m_InitialState = nfa.m_InitialState;
+
+    std::map<std::pair<MultiState, Symbol>, MultiState> newTransitions; // New generated transitions
+
+    // BFS through automata and generate new states from sets of states
+    std::queue<MultiState> queue;
+    std::set<MultiState> visited;
+
+    visited.insert({ nfa.m_InitialState });
+    queue.push({ nfa.m_InitialState });
+
+    while (queue.size() > 0) {
+        MultiState top = queue.front();
+        queue.pop();
+
+        for (Symbol symbol : nfa.m_Alphabet) {
+            MultiState newDestination;
+
+            // Generate new destination as multistate from all destinations for all states in this mulitstate
+            for (State substate : top) {
+                auto oldTransition = nfa.m_Transitions.find(std::make_pair(substate, symbol));
+
+                if (oldTransition == nfa.m_Transitions.end()) {
+                    continue;
+                }
+
+                for (State subDestination: oldTransition->second) {
+                    newDestination.insert(subDestination);
+                }
+            }
+
+            // Add new multistate as transition destination and continue BFS
+            if (newDestination.size() > 0) {
+                newTransitions[std::make_pair(top, symbol)] = newDestination;
+
+                if (visited.count(newDestination) == 0) {
+                    visited.insert(newDestination);
+                    queue.push(newDestination);
+                }
+            }
+        }
+    }
+
+    // Map each multistate to new state for result automata
+    std::map<MultiState, State> newStatesMapping;
+    State newStateValue = 0;
+    for (MultiState const & multiState : visited) {
+        result.m_States.insert(newStateValue);
+        newStatesMapping[multiState] = newStateValue;
+
+        // If one of substates in multistate is final, set for new state in result to be final
+        for (State substate: multiState) {
+            if (nfa.m_FinalStates.count(substate) > 0) {
+                result.m_FinalStates.insert(newStateValue);
+                break;
+            }
+        }
+
+        newStateValue++;
+    }
+
+    result.m_InitialState = newStatesMapping[{ nfa.m_InitialState }]; // Assign initial state in result
+
+     // Create new transitions in result based on transitions with multistates converted to new states  
+    for (auto it = newTransitions.begin(); it != newTransitions.end(); it++) {
+        result.m_Transitions[std::make_pair(newStatesMapping[it->first.first], it->first.second)] = newStatesMapping[it->second];
+    }
+
+    return result;
 }
 
 void unifyAlphabets(NFA & a, NFA & b) {
@@ -185,7 +269,7 @@ DFA unify(const NFA & a, const NFA & b) {
     NFA completedA = complete(copyA);
     NFA completedB = complete(copyB);
 
-    NFA unified = parallel_run(completedA, completedB, false);
+    NFA unified = parallelRun(completedA, completedB, false);
 }
 
 DFA intersect(const NFA & a, const NFA & b) {
@@ -193,7 +277,7 @@ DFA intersect(const NFA & a, const NFA & b) {
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    NFA intersected = parallel_run(copyA, copyB, true);
+    NFA intersected = parallelRun(copyA, copyB, true);
 }
 
 #ifndef __PROGTEST__
