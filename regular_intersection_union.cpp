@@ -24,75 +24,12 @@
 using State = unsigned int;
 using Symbol = uint8_t;
 
-static const State nullState = -1;
-
 struct NFA {
-public:
     std::set<State> m_States;
     std::set<Symbol> m_Alphabet;
     std::map<std::pair<State, Symbol>, std::set<State>> m_Transitions;
     State m_InitialState;
     std::set<State> m_FinalStates;
-
-    NFA & complete() {
-
-        m_States.insert(nullState);
-        for (Symbol s : m_Alphabet) {
-            m_Transitions[std::make_pair(nullState, s)] = { nullState };
-        }
-
-        std::set<State> completed;
-        std::queue<State> queue;
-
-        queue.push(m_InitialState);
-        completed.insert(m_InitialState);
-        completed.insert(nullState);
-
-        while (queue.size() > 0) {
-            State top = queue.front();
-            queue.pop();
-
-            for (Symbol s : m_Alphabet) {
-                std::pair<State, Symbol> newPair(top, s);
-                auto findInTransitions = m_Transitions.find(newPair);
-                if (findInTransitions == m_Transitions.end()) {
-                    m_Transitions[newPair] = { nullState };
-                } else {
-                    for (State destination : findInTransitions->second) {
-                        if (completed.count(destination) == 0) {
-                            completed.insert(destination);
-                            queue.push(destination);
-                        }
-                    }
-                }
-            }
-
-        }
-
-        return *this;
-    }
-
-    void print() {
-        std::cout << "initial " << m_InitialState << std::endl;
-        std::cout << "final ";
-        for (State final: m_FinalStates) {
-            std::cout << final << ", ";
-        }
-        std::cout << ";" << std::endl;
-
-        for (State state : m_States) {
-            for (Symbol symbol : m_Alphabet) {
-                auto findInTransitions = m_Transitions.find(std::make_pair(state, symbol));
-                std::cout << " (" << state << ")" << " [" << symbol << "] - ";
-                if (findInTransitions != m_Transitions.end()) {
-                    for (State destination : findInTransitions->second) {
-                        std::cout << destination << ", ";
-                    }
-                }
-                std::cout << ";" << std::endl;
-            }
-        }
-    }
 };
 
 struct DFA {
@@ -104,10 +41,79 @@ struct DFA {
 };
 
 #endif
-/*
-DFA unify(const NFA& a, const NFA& b);
+
+static const State nullState = -1;
+
+NFA complete(const NFA& a) {
+    NFA result(a);
+
+    // Create new nullState in automata
+    result.m_States.insert(nullState);
+    for (Symbol s: result.m_Alphabet) {
+        result.m_Transitions[std::make_pair(nullState, s)] = { nullState };
+    }
+
+    //BFS through automata and complete all transitions for all symbols of alphabet
+    std::set<State> completed;
+    std::queue<State> queue;
+
+    queue.push(result.m_InitialState);
+    completed.insert(result.m_InitialState);
+    completed.insert(nullState);
+
+    while (queue.size() > 0) {
+        State top = queue.front();
+        queue.pop();
+
+        for (Symbol s : m_Alphabet) {
+            std::pair<State, Symbol> transitionKey(top, s);
+            auto transition = result.m_Transitions.find(transitionKey);
+            if (transition == result.m_Transitions.end()) { // If transition for this symbol doesnt exist, fill it
+                result.m_Transitions[transitionKey] = { nullState };
+            } else { // If transition for this symbol does exist, add state of transition to queue and continue bfs
+                for (State destination : transition->second) {
+                    if (completed.count(destination) == 0) {
+                        completed.insert(destination);
+                        queue.push(destination);
+                    }
+                }
+            }
+        }
+
+    }
+
+    return result;
+}
+
+DFA unify(const NFA& a, const NFA& b) {
+    using DoubleState = std::pair<State, State>;
+
+    std::map<DoubleState, Symbol>, std::set<DoubleState>> newTransitions;
+    DoubleState newInitialState = { a.m_InitialState, b.m_InitialState };
+
+    std::set<DoubleState> visited;
+    std::queue<DoubleState> queue;
+
+    queue.push(newInitialState);
+    completed.insert(newInitialState);
+    
+    while(queue.size() > 0) {
+        DoubleState top = queue.front();
+        queue.pop();
+
+        for (Symbol s: m_Alphabet) {
+            std::pair<State, Symbol> transitionKeyA = { top.first, s };
+            std::pair<State, Symbol> transitionKeyB = { top.second, s };
+            auto transitionA = a.m_Transitions.find(transitionKeyA);
+            auto transitionB = a.m_Transitions.find(transitionKeyA);
+
+            if ((transitionA == a.m_Transitions.end()) || (transitionB == b.m_Transitions.end()))
+        }
+    }
+
+}
 DFA intersect(const NFA& a, const NFA& b);
-*/
+
 #ifndef __PROGTEST__
 
 // You may need to update this function or the sample data if your state naming strategy differs.
@@ -116,32 +122,8 @@ bool operator==(const DFA& a, const DFA& b)
     return std::tie(a.m_States, a.m_Alphabet, a.m_Transitions, a.m_InitialState, a.m_FinalStates) == std::tie(b.m_States, b.m_Alphabet, b.m_Transitions, b.m_InitialState, b.m_FinalStates);
 }
 
-void customTests() {
-    NFA c1 {
-        { 0, 1, 2, 3, 4 },
-        { 'a', 'b' },
-        {
-            { { 0, 'b' }, { 1 } },
-        { { 0, 'a' }, { 2 } },
-        { { 2, 'a' }, { 2, 3 } },
-        { { 2, 'b' }, { 4 } },
-        { { 3, 'a' }, { 4 } },
-        { { 3, 'b' }, { 3 } }
-        },
-        0,
-        { 4 }
-    };
-    c1.print();
-    c1.complete();
-    c1.print();
-}
-
 int main()
 {
-
-    customTests();
-
-    /*
     NFA a1{
         {0, 1, 2},
         {'a', 'b'},
@@ -314,6 +296,5 @@ int main()
         {1, 2, 3},
     };
     assert(intersect(d1, d2) == d);
-    */
 }
 #endif
