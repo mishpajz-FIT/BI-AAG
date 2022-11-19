@@ -319,6 +319,92 @@ DFA removeUseless(const DFA & dfa) {
     return result;
 }
 
+DFA minimize(const DFA & dfa) {
+    using Transition = std::pair<Symbol, State>;
+
+    std::map<State, State> equivalenceStates;
+
+    for (State state : dfa.m_States) {
+        if (dfa.m_FinalStates.count(state) > 0) {
+            equivalenceStates[state] = 1;
+        } else {
+            equivalenceStates[state] = 0;
+        }
+    }
+    State nextAvailableState = 2;
+
+    bool changed = false;
+    do {
+        changed = false;
+
+        std::map<State, std::map<State, std::set<Transition>>> equivalenceTable;
+
+        for (State state : dfa.m_States) {
+
+            State equivalentState = equivalenceStates[state];
+
+            for (Symbol symbol : dfa.m_Alphabet) {
+                auto transition = dfa.m_Transitions.find(std::make_pair(state, symbol));
+
+                if (transition == dfa.m_Transitions.end()) {
+                    continue;
+                }
+
+                (equivalenceTable[equivalentState])[state].insert(std::make_pair(symbol, equivalenceStates[transition->second]));
+            }
+        }
+
+        for (auto it = equivalenceTable.begin(); it != equivalenceTable.end(); it++) {
+            State equivalentState = it->first;
+            std::map<std::set<Transition>, State> newStates;
+
+            for (auto itIn = it->second.begin(); itIn != it->second.end(); itIn++) {
+                if (itIn == it->second.begin()) {
+                    newStates[itIn->second] = equivalentState;
+                    continue;
+                }
+
+                if (newStates.count(itIn->second) > 0) {
+                    equivalenceStates[itIn->first] = newStates[itIn->second];
+                    continue;
+                }
+
+                newStates[itIn->second] = nextAvailableState;
+                equivalenceStates[itIn->first] = nextAvailableState;
+                nextAvailableState++;
+                changed = true;
+            }
+        }
+
+    } while (changed);
+
+    DFA result;
+    result.m_InitialState = equivalenceStates[dfa.m_InitialState];
+    result.m_Alphabet = dfa.m_Alphabet;
+
+    for (State state : dfa.m_States) {
+        State equivalentState = equivalenceStates[state];
+
+        result.m_States.insert(equivalentState);
+
+        if (dfa.m_FinalStates.count(state) > 0) {
+            result.m_FinalStates.insert(equivalentState);
+        }
+
+        for (Symbol symbol : dfa.m_Alphabet) {
+            auto transition = dfa.m_Transitions.find(std::make_pair(state, symbol));
+
+            if (transition == dfa.m_Transitions.end()) {
+                continue;
+            }
+
+            result.m_Transitions[std::make_pair(equivalentState, symbol)] = equivalenceStates[transition->second];
+        }
+    }
+
+    return result;
+}
+
 void unifyAlphabets(NFA & a, NFA & b) {
     std::set<Symbol> newAlphabet;
     for (Symbol s : a.m_Alphabet) {
@@ -337,10 +423,7 @@ DFA unify(const NFA & a, const NFA & b) {
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    NFA completedA = complete(copyA);
-    NFA completedB = complete(copyB);
-
-    NFA unified = parallelRun(completedA, completedB, false);
+    return minimize(determinize(parallelRun(complete(copyA), complete(copyB), false)));
 }
 
 DFA intersect(const NFA & a, const NFA & b) {
@@ -348,7 +431,7 @@ DFA intersect(const NFA & a, const NFA & b) {
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    NFA intersected = parallelRun(copyA, copyB, true);
+    return minimize(determinize(parallelRun(copyA, copyB, true)));
 }
 
 #ifndef __PROGTEST__
