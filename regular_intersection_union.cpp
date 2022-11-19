@@ -248,6 +248,77 @@ DFA determinize(const NFA & nfa) {
     return result;
 }
 
+DFA removeUseless(const DFA & dfa) {
+
+    // Reverse all transitions
+    std::map<State, std::set<State>> reverseTransitions;
+    for (auto it = dfa.m_Transitions.begin(); it != dfa.m_Transitions.end(); it++) {
+        reverseTransitions[it->second].insert(it->first.first);
+    }
+
+    // Perform BFS from final states, store reached (useful) states
+    std::queue<State> queue;
+    std::set<State> useful;
+
+    for (State final : dfa.m_FinalStates) {
+        queue.push(final);
+        useful.insert(final);
+    }
+
+    while (queue.size() > 0) {
+        State top = queue.front();
+        queue.pop();
+
+        for (State origin : reverseTransitions[top]) {
+            if (useful.count(origin) == 0) {
+                useful.insert(origin);
+                queue.push(origin);
+            }
+        }
+    }
+
+    // Create new automata
+    DFA result;
+    result.m_InitialState = dfa.m_InitialState;
+    result.m_Alphabet = dfa.m_Alphabet;
+    result.m_States = { dfa.m_InitialState };
+
+    // Perofrm BFS from initial state, only adding states and transitions that are usefull
+    std::queue<State> newQueue;
+    newQueue.push(dfa.m_InitialState);
+    std::swap(queue, newQueue);
+
+    while (queue.size() > 0) {
+        State top = queue.front();
+        queue.pop();
+
+        if (dfa.m_FinalStates.count(top) > 0) { // Check if state is final and add it to final states
+            result.m_FinalStates.insert(top);
+        }
+
+        // Find all transitions (for all symbols of alphabet)
+        for (Symbol symbol : result.m_Alphabet) {
+            auto transition = dfa.m_Transitions.find(std::make_pair(top, symbol));
+
+            if (transition == dfa.m_Transitions.end()) {
+                continue;
+            }
+
+            State destination = transition->second;
+            if (useful.count(destination) > 0) { // If state is useful, add transition to result
+                result.m_Transitions[std::make_pair(top, symbol)] = destination;
+
+                if (result.m_States.count(destination) == 0) { // If state has not been processed, continue BFS on it
+                    result.m_States.insert(destination);
+                    queue.push(destination);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 void unifyAlphabets(NFA & a, NFA & b) {
     std::set<Symbol> newAlphabet;
     for (Symbol s : a.m_Alphabet) {
