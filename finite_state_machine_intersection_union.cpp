@@ -1,3 +1,15 @@
+/**
+ * @file finite_state_machine_intersection_union.cpp
+ * @author Michal Dobeš
+ * @date 2022-11-20
+ *
+ * @brief Intersection and union of nondeterministic finite state machine,
+ *        with determinisation and minimisation
+ *
+ * @copyright Copyright (c) 2022
+ *
+ */
+
 #ifndef __PROGTEST__
 
 #include <algorithm>
@@ -30,37 +42,6 @@ struct NFA {
     std::map<std::pair<State, Symbol>, std::set<State>> m_Transitions;
     State m_InitialState;
     std::set<State> m_FinalStates;
-
-    void print() {
-        std::cout << "---------------------" << std::endl;
-        std::cout << "states: ";
-        for (State s : m_States) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-
-        std::cout << "alphabet: ";
-        for (Symbol s : m_Alphabet) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-
-        std::cout << "transitions: " << std::endl;
-        for (auto it = m_Transitions.begin(); it != m_Transitions.end(); it++) {
-            std::cout << " (" << it->first.first << "+[" << it->first.second << "])" << std::endl;
-            for (State s : it->second) {
-                std::cout << "   ->" << s << std::endl;
-            }
-        }
-
-        std::cout << "initial: " << m_InitialState << std::endl;
-
-        std::cout << "final: ";
-        for (State s : m_FinalStates) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-    }
 };
 
 struct DFA {
@@ -69,41 +50,19 @@ struct DFA {
     std::map<std::pair<State, Symbol>, State> m_Transitions;
     State m_InitialState;
     std::set<State> m_FinalStates;
-
-    void print() {
-        std::cout << "---------------------" << std::endl;
-        std::cout << "states: ";
-        for (State s : m_States) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-
-        std::cout << "alphabet: ";
-        for (Symbol s : m_Alphabet) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-
-        std::cout << "transitions: " << std::endl;
-        for (auto it = m_Transitions.begin(); it != m_Transitions.end(); it++) {
-            std::cout << " (" << it->first.first << "+[" << it->first.second << "]) -> " << it->second << std::endl;
-        }
-
-        std::cout << "initial: " << m_InitialState << std::endl;
-
-        std::cout << "final: ";
-        for (State s : m_FinalStates) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
-    }
 };
 
 #endif
 
-static const State nullState = -1;
+static const State nullState = -1; // Special (fail) state
 
-NFA complete(const NFA& a) {
+/**
+ * @brief Total unfilled transitions into fail state
+ *
+ * @param a
+ * @return NFA
+ */
+NFA total(const NFA & a) {
     NFA result(a);
 
     // Create new nullState in automata
@@ -147,6 +106,17 @@ NFA complete(const NFA& a) {
     return result;
 }
 
+/**
+ * @brief Parallel run algorithm for two NFAs
+ *
+ * Merges two automatas by parallely going through
+ * Either creates intersection or unification
+ *
+ * @param a
+ * @param b
+ * @param finalStatesAreUnified States in both a and b need to be final for new state to be final (perform intersection)
+ * @return NFA
+ */
 NFA parallelRun(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
     using DoubleState = std::pair<State, State>; // States are pairs of states, where lhs is state in a and rhs is state in b
 
@@ -230,6 +200,12 @@ NFA parallelRun(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
     return result;
 }
 
+/**
+ * @brief Determinize NFA into DFA
+ *
+ * @param nfa
+ * @return DFA
+ */
 DFA determinize(const NFA & nfa) {
     using MultiState = std::set<State>; // States are sets of states
 
@@ -306,6 +282,12 @@ DFA determinize(const NFA & nfa) {
     return result;
 }
 
+/**
+ * @brief Removes both useless (no path into final state) and unreachable (no path from inital stae) states from DFA
+ *
+ * @param dfa
+ * @return DFA
+ */
 DFA removeUseless(const DFA & dfa) {
     // Reverse all transitions
     std::map<State, std::set<State>> reverseTransitions;
@@ -376,31 +358,44 @@ DFA removeUseless(const DFA & dfa) {
     return result;
 }
 
+/**
+ * @brief Minimizes DFA into smallest possible automata
+ *
+ * Uses Hopcroft's algorithm (https://en.wikipedia.org/wiki/DFA_minimization)
+ *
+ * @param dfa
+ * @return DFA
+ */
 DFA minimize(const DFA & dfa) {
     using Transition = std::pair<Symbol, State>;
 
-    std::map<State, State> equivalenceStates;
+    std::map<State, State> equivalenceStates; // Partition number for each state
 
+    // Separate states into two partition (final and nonfinal)
     for (State state : dfa.m_States) {
-        if (dfa.m_FinalStates.count(state) > 0) {
+        if (dfa.m_FinalStates.count(state) > 0) { // Final states partition
             equivalenceStates[state] = 1;
         } else {
-            equivalenceStates[state] = 0;
+            equivalenceStates[state] = 0; // Nonfinal states partition
         }
     }
-    State nextAvailableState = 2;
+    State nextAvailableState = 2; // Number for next partition
 
+    // Find equivalence classes for each Nerode congurence until reached length that doesnt change equivalences
     bool changed = false;
     do {
         changed = false;
 
-        std::map<State, std::map<State, std::set<Transition>>> equivalenceTable;
+        std::map<State, std::map<State, std::set<Transition>>> equivalenceTable; // Partition number to state 
+        // with set of its transitions in partitions (transitions contain partitions instead of states)
 
+        // For each state and each symbol edit transition (replace state number with partition numbers) and store it in equivalenceTable
+        // (Equivalence table construction) 
         for (State state : dfa.m_States) {
 
             State equivalentState = equivalenceStates[state];
 
-            size_t transitionsForState = 0;
+            size_t transitionsForState = 0; // For detecting special case (state has no transitions)
             for (Symbol symbol : dfa.m_Alphabet) {
                 auto transition = dfa.m_Transitions.find(std::make_pair(state, symbol));
 
@@ -412,27 +407,31 @@ DFA minimize(const DFA & dfa) {
                 (equivalenceTable[equivalentState])[state].insert(std::make_pair(symbol, equivalenceStates[transition->second]));
             }
 
-            if (transitionsForState == 0) {
+            if (transitionsForState == 0) { // If state has no transitions, add empty set
                 (equivalenceTable[equivalentState])[state] = { };
             }
         }
 
-        for (auto it = equivalenceTable.begin(); it != equivalenceTable.end(); it++) {
+        // For each partition, check if all states in it have identical transitions (into same partitions), 
+        // if not split partition and create new ones
+        for (auto it = equivalenceTable.begin(); it != equivalenceTable.end(); it++) { // Each partition
             State equivalentState = it->first;
-            std::map<std::set<Transition>, State> newStates;
+            std::map<std::set<Transition>, State> newPartitions; // Stores transitions to (new) paritions numbers (will have only one value if this partition wasnt split)
 
-            for (auto itIn = it->second.begin(); itIn != it->second.end(); itIn++) {
-                if (itIn == it->second.begin()) {
-                    newStates[itIn->second] = equivalentState;
+
+            for (auto itIn = it->second.begin(); itIn != it->second.end(); itIn++) { // Each state in partition
+                if (itIn == it->second.begin()) { // If first state in partition, transitions into newPartitions as current partition
+                    newPartitions[itIn->second] = equivalentState;
                     continue;
                 }
 
-                if (newStates.count(itIn->second) > 0) {
-                    equivalenceStates[itIn->first] = newStates[itIn->second];
+                if (newPartitions.count(itIn->second) > 0) { // If transitions already have a partition in newPartitions, set states new partiton to this partition
+                    equivalenceStates[itIn->first] = newPartitions[itIn->second];
                     continue;
                 }
 
-                newStates[itIn->second] = nextAvailableState;
+                // If transitions do not have a parititon (transitions are not in newPartitions), create new partition and store it to newPartitions, set states new partiton to this partition
+                newPartitions[itIn->second] = nextAvailableState;
                 equivalenceStates[itIn->first] = nextAvailableState;
                 nextAvailableState++;
                 changed = true;
@@ -441,6 +440,8 @@ DFA minimize(const DFA & dfa) {
 
     } while (changed);
 
+
+    // Convert each partition into state (parititons are unifing equivalent states)
     DFA result;
     result.m_InitialState = equivalenceStates[dfa.m_InitialState];
     result.m_Alphabet = dfa.m_Alphabet;
@@ -448,12 +449,13 @@ DFA minimize(const DFA & dfa) {
     for (State state : dfa.m_States) {
         State equivalentState = equivalenceStates[state];
 
-        result.m_States.insert(equivalentState);
+        result.m_States.insert(equivalentState); // Insert partition number as new state state
 
-        if (dfa.m_FinalStates.count(state) > 0) {
+        if (dfa.m_FinalStates.count(state) > 0) { // Check if partition contained final states, if so mark new state as final
             result.m_FinalStates.insert(equivalentState);
         }
 
+        // Convert state number in each old transition into parition number (create new transitions between partitions)
         for (Symbol symbol : dfa.m_Alphabet) {
             auto transition = dfa.m_Transitions.find(std::make_pair(state, symbol));
 
@@ -468,6 +470,12 @@ DFA minimize(const DFA & dfa) {
     return result;
 }
 
+/**
+ * @brief Unify alphabets between two NFAs
+ *
+ * @param a
+ * @param b
+ */
 void unifyAlphabets(NFA & a, NFA & b) {
     std::set<Symbol> newAlphabet;
     for (Symbol s : a.m_Alphabet) {
@@ -481,14 +489,28 @@ void unifyAlphabets(NFA & a, NFA & b) {
     b.m_Alphabet = newAlphabet;
 }
 
+/**
+ * @brief Unify two NFAs and convert it to minimal DFA
+ *
+ * @param a
+ * @param b
+ * @return DFA
+ */
 DFA unify(const NFA & a, const NFA & b) {
     NFA copyA(a);
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    return minimize(removeUseless(determinize(parallelRun(complete(copyA), complete(copyB), false))));
+    return minimize(removeUseless(determinize(parallelRun(total(copyA), total(copyB), false))));
 }
 
+/**
+ * @brief Intersect two NFAs and convert it to minimal DFA
+ *
+ * @param a
+ * @param b
+ * @return DFA
+ */
 DFA intersect(const NFA & a, const NFA & b) {
     NFA copyA(a);
     NFA copyB(b);
@@ -499,17 +521,27 @@ DFA intersect(const NFA & a, const NFA & b) {
 
 #ifndef __PROGTEST__
 
+/**
+ * @brief Rename states in DFA
+ *
+ * Renames states as {0,1,...} by going from inital state using BFS
+ *
+ * @param a
+ * @return DFA
+ */
 DFA rename(const DFA & a) {
     DFA copyA;
     copyA.m_Alphabet = a.m_Alphabet;
 
-    std::map<State, State> newNames;
+    std::map<State, State> newNames; // Old state name to new name
 
+    // Rename inital state
     newNames[a.m_InitialState] = 0;
     copyA.m_States.insert(0);
     copyA.m_InitialState = 0;
     State currentName = 1;
 
+    // BFS through all reachable states and rename
     std::queue<State> queue;
     queue.push(a.m_InitialState);
 
@@ -522,7 +554,7 @@ DFA rename(const DFA & a) {
             copyA.m_FinalStates.insert(newTop);
         }
 
-        // Find all transitions (for all symbols of alphabet)
+        // Find all transitions (for all symbols of alphabet) and rename states in them
         for (Symbol symbol : a.m_Alphabet) {
             auto transition = a.m_Transitions.find(std::make_pair(top, symbol));
 
@@ -531,7 +563,7 @@ DFA rename(const DFA & a) {
             }
 
             State destination = transition->second;
-            if (newNames.count(destination) == 0) {
+            if (newNames.count(destination) == 0) { // Rename state and continue BFS on it
                 newNames[destination] = currentName++;
                 queue.push(destination);
                 copyA.m_States.insert(newNames[destination]);
@@ -543,8 +575,6 @@ DFA rename(const DFA & a) {
     return copyA;
 }
 
-
-// You may need to update this function or the sample data if your state naming strategy differs.
 bool operator==(const DFA& a, const DFA& b)
 {
     DFA copyA = rename(a);
@@ -555,6 +585,7 @@ bool operator==(const DFA& a, const DFA& b)
 
 int main()
 {
+    //SECTION: Tests
     NFA a1{
         {0, 1, 2},
         {'a', 'b'},
@@ -727,5 +758,7 @@ int main()
         {1, 2, 3},
     };
     assert(intersect(d1, d2) == d);
+
+    //!SECTION: Tests
 }
 #endif
