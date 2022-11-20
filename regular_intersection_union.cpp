@@ -30,6 +30,37 @@ struct NFA {
     std::map<std::pair<State, Symbol>, std::set<State>> m_Transitions;
     State m_InitialState;
     std::set<State> m_FinalStates;
+
+    void print() {
+        std::cout << "---------------------" << std::endl;
+        std::cout << "states: ";
+        for (State s : m_States) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << "alphabet: ";
+        for (Symbol s : m_Alphabet) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << "transitions: " << std::endl;
+        for (auto it = m_Transitions.begin(); it != m_Transitions.end(); it++) {
+            std::cout << " (" << it->first.first << "+[" << it->first.second << "])" << std::endl;
+            for (State s : it->second) {
+                std::cout << "   ->" << s << std::endl;
+            }
+        }
+
+        std::cout << "initial: " << m_InitialState << std::endl;
+
+        std::cout << "final: ";
+        for (State s : m_FinalStates) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+    }
 };
 
 struct DFA {
@@ -38,6 +69,34 @@ struct DFA {
     std::map<std::pair<State, Symbol>, State> m_Transitions;
     State m_InitialState;
     std::set<State> m_FinalStates;
+
+    void print() {
+        std::cout << "---------------------" << std::endl;
+        std::cout << "states: ";
+        for (State s : m_States) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << "alphabet: ";
+        for (Symbol s : m_Alphabet) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << "transitions: " << std::endl;
+        for (auto it = m_Transitions.begin(); it != m_Transitions.end(); it++) {
+            std::cout << " (" << it->first.first << "+[" << it->first.second << "]) -> " << it->second << std::endl;
+        }
+
+        std::cout << "initial: " << m_InitialState << std::endl;
+
+        std::cout << "final: ";
+        for (State s : m_FinalStates) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+    }
 };
 
 #endif
@@ -100,7 +159,6 @@ NFA parallelRun(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
 
     queue.push(newInitialState);
     visited.insert(newInitialState);
-
     while (queue.size() > 0) {
         DoubleState top = queue.front();
         queue.pop();
@@ -108,7 +166,7 @@ NFA parallelRun(const NFA & a, const NFA & b, bool finalStatesAreUnified) {
         for (Symbol s : a.m_Alphabet) {
             // Find transtions for each state in doublestate in their automata
             auto transitionA = a.m_Transitions.find(std::make_pair(top.first, s));
-            auto transitionB = a.m_Transitions.find(std::make_pair(top.second, s));
+            auto transitionB = b.m_Transitions.find(std::make_pair(top.second, s));
 
             if ((transitionA == a.m_Transitions.end()) || (transitionB == b.m_Transitions.end())) {
                 continue;
@@ -249,7 +307,6 @@ DFA determinize(const NFA & nfa) {
 }
 
 DFA removeUseless(const DFA & dfa) {
-
     // Reverse all transitions
     std::map<State, std::set<State>> reverseTransitions;
     for (auto it = dfa.m_Transitions.begin(); it != dfa.m_Transitions.end(); it++) {
@@ -343,6 +400,7 @@ DFA minimize(const DFA & dfa) {
 
             State equivalentState = equivalenceStates[state];
 
+            size_t transitionsForState = 0;
             for (Symbol symbol : dfa.m_Alphabet) {
                 auto transition = dfa.m_Transitions.find(std::make_pair(state, symbol));
 
@@ -350,7 +408,12 @@ DFA minimize(const DFA & dfa) {
                     continue;
                 }
 
+                transitionsForState++;
                 (equivalenceTable[equivalentState])[state].insert(std::make_pair(symbol, equivalenceStates[transition->second]));
+            }
+
+            if (transitionsForState == 0) {
+                (equivalenceTable[equivalentState])[state] = { };
             }
         }
 
@@ -423,7 +486,7 @@ DFA unify(const NFA & a, const NFA & b) {
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    return minimize(determinize(parallelRun(complete(copyA), complete(copyB), false)));
+    return minimize(removeUseless(determinize(parallelRun(complete(copyA), complete(copyB), false))));
 }
 
 DFA intersect(const NFA & a, const NFA & b) {
@@ -431,15 +494,63 @@ DFA intersect(const NFA & a, const NFA & b) {
     NFA copyB(b);
     unifyAlphabets(copyA, copyB);
 
-    return minimize(determinize(parallelRun(copyA, copyB, true)));
+    return minimize(removeUseless(determinize(parallelRun(copyA, copyB, true))));
 }
 
 #ifndef __PROGTEST__
 
+DFA rename(const DFA & a) {
+    DFA copyA;
+    copyA.m_Alphabet = a.m_Alphabet;
+
+    std::map<State, State> newNames;
+
+    newNames[a.m_InitialState] = 0;
+    copyA.m_States.insert(0);
+    copyA.m_InitialState = 0;
+    State currentName = 1;
+
+    std::queue<State> queue;
+    queue.push(a.m_InitialState);
+
+    while (queue.size() > 0) {
+        State top = queue.front();
+        State newTop = newNames[top];
+        queue.pop();
+
+        if (a.m_FinalStates.count(top) > 0) { // Check if state is final and add it to final states
+            copyA.m_FinalStates.insert(newTop);
+        }
+
+        // Find all transitions (for all symbols of alphabet)
+        for (Symbol symbol : a.m_Alphabet) {
+            auto transition = a.m_Transitions.find(std::make_pair(top, symbol));
+
+            if (transition == a.m_Transitions.end()) {
+                continue;
+            }
+
+            State destination = transition->second;
+            if (newNames.count(destination) == 0) {
+                newNames[destination] = currentName++;
+                queue.push(destination);
+                copyA.m_States.insert(newNames[destination]);
+            }
+            copyA.m_Transitions[std::make_pair(newTop, symbol)] = newNames[destination];
+        }
+    }
+
+    return copyA;
+}
+
+
 // You may need to update this function or the sample data if your state naming strategy differs.
 bool operator==(const DFA& a, const DFA& b)
 {
-    return std::tie(a.m_States, a.m_Alphabet, a.m_Transitions, a.m_InitialState, a.m_FinalStates) == std::tie(b.m_States, b.m_Alphabet, b.m_Transitions, b.m_InitialState, b.m_FinalStates);
+    DFA copyA = rename(a);
+    DFA copyB = rename(b);
+
+    return std::tie(copyA.m_States, copyA.m_Alphabet, copyA.m_Transitions, copyA.m_InitialState, copyA.m_FinalStates) == std::tie(copyB.m_States, copyB.m_Alphabet, copyB.m_Transitions, copyB.m_InitialState, copyB.m_FinalStates);
 }
 
 int main()
