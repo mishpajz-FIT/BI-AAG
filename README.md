@@ -2,7 +2,7 @@
 
 This course focuses on automata theory and formal languages.
 
-This repository is an implementation of some algorithms for finite automata in C++ for a homework task.
+This repository contains an implementation of some algorithms for finite automata in C++ for a homework task.
 
 ### Task assignment
 
