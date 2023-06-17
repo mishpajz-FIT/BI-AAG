@@ -1,8 +1,8 @@
 # BI-AAG
 
-This course focuses on automata theory and formal languages.
+This repository was created as a part of my 'Automata and grammars' course at FIT CTU.
 
-This repository contains an implementation of some algorithms for finite automata in C++ for a homework task.
+This course focuses on automata theory and formal languages. The repository contains an implementation of some algorithms for finite automata in C++ for a homework task.
 
 ### Task assignment
 
